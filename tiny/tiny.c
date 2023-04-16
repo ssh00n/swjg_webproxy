@@ -33,8 +33,8 @@ int main(int argc, char **argv)
 	      clientlen = sizeof(clientaddr);
 	      connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); //line:netp:tiny:accept   
 	      Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
-        printf("Accepted connection from (%s, %s)\n", hostname, port);
-        doit(connfd);                                             //line:netp:tiny:doit
+          printf("Accepted connection from (%s, %s)\n", hostname, port);
+          doit(connfd);                                             //line:netp:tiny:doit
 	      Close(connfd);                                            //line:netp:tiny:close
     }
 }
@@ -56,11 +56,13 @@ void doit(int fd)
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);                   //line:netp:doit:readrequest
     sscanf(buf, "%s %s %s", method, uri, version);       //line:netp:doit:parserequest
-    if (strcasecmp(method, "GET")) {                     //line:netp:doit:beginrequesterr
+    
+    if (strcasecmp(method, "GET") && strcasecmp(method, "HEAD")) {                     //line:netp:doit:beginrequesterr
     clienterror(fd, method, "501", "Not Implemented",
                 "Tiny does not implement this method");
         return;
     }                                                    //line:netp:doit:endrequesterr
+    
     read_requesthdrs(&rio);                              //line:netp:doit:readrequesthdrs
 
     /* Parse URI from GET request */
@@ -70,7 +72,10 @@ void doit(int fd)
 	      return;
     }                                                    //line:netp:doit:endnotfound
 
-    if (is_static) { /* Serve static content */          
+    if (strcasecmp(method, "HEAD") == 0){
+        serve_head(fd, filename, sbuf.st_size);
+    }
+    else if (is_static) { /* Serve static content */          
 	      if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) { //line:netp:doit:readable
 	          clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
 	          return;
@@ -86,6 +91,22 @@ void doit(int fd)
     }
 }
 /* $end doit */
+
+void serve_head(int fd, char *filename, int filesize)
+{
+    int srcfd;
+    char *srcp, filetype[MAXLINE], buf[MAXBUF];
+ 
+    /* Send response headers to client */
+    get_filetype(filename, filetype);       //line:netp:servestatic:getfiletype
+    sprintf(buf, "HTTP/1.0 200 OK\r\n");    //line:netp:servestatic:beginserve
+    sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
+    sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
+    sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+    Rio_writen(fd, buf, strlen(buf));       //line:netp:servestatic:endserve
+    printf("Response headers:\n");
+    printf("%s", buf);
+}
 
 /*
  * read_requesthdrs - read and parse HTTP request headers
@@ -156,11 +177,21 @@ void serve_static(int fd, char *filename, int filesize)
     printf("%s", buf);
 
     /* Send response body to client */
+
+    // Modify TINY so that when it serves static content, it copies the requested file to the connected
+    // descriptor using malloc, rio_readn, and rio_writen, instead of mmap and rio_writen
+
     srcfd = Open(filename, O_RDONLY, 0);    //line:netp:servestatic:open
-    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);//line:netp:servestatic:mmap
+    
+    srcp = malloc(filesize);
+    Rio_readn(srcfd, srcp, filesize);
+
+    // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);//line:netp:servestatic:mmap
+
     Close(srcfd);                           //line:netp:servestatic:close
     Rio_writen(fd, srcp, filesize);         //line:netp:servestatic:write
-    Munmap(srcp, filesize);                 //line:netp:servestatic:munmap
+    free(srcp);
+    // Munmap(srcp, filesize);                 //line:netp:servestatic:munmap
 }
 
 /*
@@ -211,6 +242,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
  * clienterror - returns an error message to the client
  */
 /* $begin clienterror */
+
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg) 
 {
 

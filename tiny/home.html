@@ -1,7 +1,27 @@
 <html>
 <head><title>test</title></head>
 <body> 
-<img align="middle" src="godzilla.gif">
-Dave O'Hallaron
+<!-- <img align="middle" src="sample.mp4"> -->
+<video controls width="250">
+    <source src="sample.mp4" type="video/mp4">
+</video>
+
+<form action="cgi-bin/adder" method="get" class="adder">
+    <div class="adder">
+      <label for="num1">First number to add : </label>
+      <input type="number" name="num1" id="num1" required>
+    </div>
+    <div class="adder">
+      <label for="num2">Second number to add: </label>
+      <input type="number" name="num2" id="num2" required>
+    </div>
+    <div class="adder">
+      <input type="submit" value="Add">
+    </div>
+  </form>
+
+  <!-- GET /?operand1=operand1&operand2=operand2 -->
+  <!-- cgi-bin/adder?15000&213 -->
+
 </body>
 </html>
