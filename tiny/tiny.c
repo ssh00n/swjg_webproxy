@@ -17,7 +17,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
 int main(int argc, char **argv) 
 {
 
-    int listenfd, connfd;                                       // listion, connection descriptor
+    int listenfd, connfd;                                       // listen, connection descriptor
     char hostname[MAXLINE], port[MAXLINE];                      
     socklen_t clientlen;                                        // 
     struct sockaddr_storage clientaddr;
@@ -54,7 +54,8 @@ void doit(int fd)
   
     /* Read request line and headers */
     Rio_readinitb(&rio, fd);
-    Rio_readlineb(&rio, buf, MAXLINE);                   //line:netp:doit:readrequest
+    Rio_readlineb(&rio, buf, MAXLINE);
+    printf("%s", buf);                   //line:netp:doit:readrequest
     sscanf(buf, "%s %s %s", method, uri, version);       //line:netp:doit:parserequest
     
     if (strcasecmp(method, "GET") && strcasecmp(method, "HEAD")) {                     //line:netp:doit:beginrequesterr
@@ -112,13 +113,16 @@ void serve_head(int fd, char *filename, int filesize)
  * read_requesthdrs - read and parse HTTP request headers
  */
 /* $begin read_requesthdrs */
+
 void read_requesthdrs(rio_t *rp) 
 {
     char buf[MAXLINE];
 
     Rio_readlineb(rp, buf, MAXLINE);
+    printf("%s", buf);
     while(strcmp(buf, "\r\n")) {          //line:netp:readhdrs:checkterm
-	    Rio_readlineb(rp, buf, MAXLINE);
+	    
+        Rio_readlineb(rp, buf, MAXLINE);
 	    printf("%s", buf);
     }
     return;
@@ -133,7 +137,6 @@ void read_requesthdrs(rio_t *rp)
 int parse_uri(char *uri, char *filename, char *cgiargs) 
 {
     char *ptr;
-
     if (!strstr(uri, "cgi-bin")) {  /* Static content */ //line:netp:parseuri:isstatic
 	strcpy(cgiargs, "");                             //line:netp:parseuri:clearcgi
 	strcpy(filename, ".");                           //line:netp:parseuri:beginconvert1
