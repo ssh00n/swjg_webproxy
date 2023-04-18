@@ -5,14 +5,14 @@
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
+
 #define TINY_HOST "localhost"
-#define TINY_PORT "8000"
 
 
 void doit(int fd);
 // void read_requesthdrs(rio_t *rp);
-int parse_uri(char *uri, char *hostname, char *path, int *port);
-void read_requesthdrs(rio_t *rp, char* HTTPheader, char *host, int *port, char *path);
+int parse_uri(char *uri, char *hostname, char *path, char *port);
+void read_requesthdrs(rio_t *rp, char* HTTPheader, char *host, char *port, char *path);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
 
@@ -63,21 +63,25 @@ int main(int argc, char **argv) {
 
 void doit(int fd){
     struct stat sbuf;
-    char request_buf[MAXLINE], method[10], host[MAXLINE], uri[MAXLINE], path[MAXLINE], version[10];
+    char request_buf[MAXLINE], method[10], host[MAXLINE], uri[MAXLINE], port[10], path[MAXLINE], version[10];
     rio_t rio, rio2;
-    int port, targetfd;
+    int targetfd;
     char HTTPheader[MAXLINE];
-    
+    char buf[MAXLINE];
+
+    strcpy(HTTPheader, "");
 
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, request_buf, MAXLINE);
-    sscanf(request_buf, "%s %s %s", method, uri, version);
-    printf("%s", request_buf);
 
-    parse_uri(uri, host, path, &port);
+    sscanf(request_buf, "%s %s %s", method, uri, version);
+    // printf("%s", request_buf);
+
+    parse_uri(uri, host, path, port);
+
+
     read_requesthdrs(&rio, HTTPheader, host, port, path);
 
-    // printf("Port : %d \n", port);
     // printf("HTTPheader:\n%s", HTTPheader);
     
     if (strcasecmp(method, "GET")) {
@@ -88,32 +92,57 @@ void doit(int fd){
 
      // Establish a connection to the target server
 
-    targetfd = Open_clientfd(TINY_HOST, TINY_PORT);
+    targetfd = Open_clientfd(TINY_HOST, port);
+
     Rio_writen(targetfd, HTTPheader, strlen(HTTPheader));
 
     char forward_buf[MAXLINE];
     char response_buf[MAXLINE];
-    char response_result[MAXLINE];
+    char response_header[MAXLINE];
+    char response_content[MAXLINE];
+    
+    int content_length;
+    // parse response_header
+    sprintf(response_header, "");
+    char *payload;
 
     Rio_readinitb(&rio2, targetfd);
     Rio_readlineb(&rio2, response_buf, MAXLINE);
-    
+    strcat(response_header, response_buf);
     while(strcmp(response_buf, "\r\n")){
+        if (strstr(response_buf, "Content-length:"))
+            content_length = atoi(strchr(response_buf, ':') + 1);
         Rio_readlineb(&rio2, response_buf, MAXLINE);
-        strcat(response_buf);
+        strcat(response_header, response_buf);
     }
+
+    printf("-------- response header ------------\n");
+    printf("%s", response_header);
+    payload = malloc(content_length);
+
+    printf("-------- response content -----------\n");
     
-    //printf("%d", targetfd);
 
+    Rio_readnb(&rio2, payload, content_length);
+
+    // while(Rio_readlineb(&rio2, response_buf, MAXLINE)){
+    //     if (strcmp(response_buf, "\r\n") == 0){
+    //         break;
+    //     } 
+    //     strcat(response_content, response_buf);
+    // }
+
+    printf("%s", response_content);
+
+    Rio_writen(fd, response_header, strlen(response_header));
+    Rio_writen(fd, payload, content_length);
     close(targetfd);
-
         // Getaddrinfo(hostname, NULL, )
 
 }
 
-
-int parse_uri(char *uri, char *host, char *path, int *port){
-    *port = 8000;
+/* http://www.cmu.edu:8000/hub/index.html */
+int parse_uri(char *uri, char *host, char *path, char *port){
     char *port_start, *path_start;
     
      // Check if URI starts with "http://"
@@ -123,24 +152,33 @@ int parse_uri(char *uri, char *host, char *path, int *port){
     }
     path_start = strchr(uri, '/');
     port_start = strchr(uri, ':');
+
     if (port_start == NULL) {
+        strcpy(port, "80");
         if (path_start == NULL){
             strcpy(host, uri);
             strcpy(path, "");
         }
         else {
-            strncpy(host, uri, path_start - uri);
+            strncpy(host, uri, strlen(uri) - strlen(path_start));
             strcpy(path, path_start);
         }
     }
     else {
-        strncpy(host, uri, port_start - uri);
-        strcpy(path, path_start);
+        if (path_start == NULL) {
+            strncpy(host, uri, strlen(uri) - strlen(port_start));
+            strcpy(port, port_start+1);
+        }
+        else{ // port 있고, path 있음
+            strncpy(host, uri, strlen(uri) - strlen(port_start));
+            strncpy(port, port_start+1, strlen(port_start) - strlen(path_start)-1);
+            strcpy(path, path_start);
+        }
     }
     return 0;
 }
 
-void read_requesthdrs(rio_t *rp, char* HTTPheader, char *host, int *port, char *path)  // HTTP header
+void read_requesthdrs(rio_t *rp, char* HTTPheader, char *host, char *port, char *path)  // HTTP header
 {
 
     char buf[MAXLINE], request_hdr[MAXLINE], other_header[MAXLINE], host_header[MAXLINE];
@@ -161,9 +199,9 @@ void read_requesthdrs(rio_t *rp, char* HTTPheader, char *host, int *port, char *
             continue;
         }
         else {
-            if (strcmp(buf, "\r\n")){
+            if (strcmp(buf, "\r\n"))
+                break;
             strcat(other_header, buf);
-            }
         }
     }
     // other_header[strlen(other_header)-1]='';
@@ -177,9 +215,6 @@ void read_requesthdrs(rio_t *rp, char* HTTPheader, char *host, int *port, char *
     // if (!strstr(other_header, "Connection")){
     //     strcat(other_header, "Connection: close\r\n");
     // }
-
-    
-
     sprintf(HTTPheader, "%s%s%s%s%s%s\r\n", request_hdr, user_agent_hdr, host_header, other_header, "Connection: close\r\n", "Proxy-Connection: close\r\n");
 
     // Host: www.cmu.edu
